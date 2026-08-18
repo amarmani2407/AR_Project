@@ -145,9 +145,12 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
   const dynamicGroupRef = useRef<THREE.Group | null>(null);
   const ghostICGroupRef = useRef<THREE.Group | null>(null);
   const tableMeshRef = useRef<THREE.Mesh | null>(null);
+  const bevelMeshRef = useRef<THREE.Mesh | null>(null);
+  const gridMeshRef = useRef<THREE.GridHelper | null>(null);
   const psuDisplayPlateRef = useRef<THREE.Mesh | null>(null);
   const dmmDisplayPlateRef = useRef<THREE.Mesh | null>(null);
   const activeNodeMarkerRef = useRef<THREE.Mesh | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Moving / Placing state
   const [internalMovingICId, setInternalMovingICId] = useState<string | null>(null);
@@ -329,10 +332,12 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
     const bevel = new THREE.Mesh(bevelGeo, bevelMat);
     bevel.position.y = -0.04;
     scene.add(bevel);
+    bevelMeshRef.current = bevel;
 
     const grid = new THREE.GridHelper(32, 48, 0x1e293b, 0x0f172a);
     grid.position.y = 0.001;
     scene.add(grid);
+    gridMeshRef.current = grid;
 
     // 7. Root Transform Model Group
     const rootGroup = new THREE.Group();
@@ -508,6 +513,148 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       renderer.dispose();
     };
+  }, []);
+
+  // Manage camera streaming for Augmented Reality (AR) mode
+  const startCameraStream = useCallback(async () => {
+    setCameraError(null);
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera streaming is not supported on this browser or platform.');
+      }
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: cameraFacing,
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+      } catch (e) {
+        // Fallback to default video device
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch((playErr) => {
+          console.warn('Video stream autoplay was interrupted:', playErr);
+        });
+      }
+    } catch (err: any) {
+      console.error('AR Camera Error:', err);
+      const isDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+      const isNotFound = err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError';
+      setCameraError(
+        isDenied
+          ? 'Camera permission denied. Please allow camera permissions in browser site settings to view the circuit overlaid on your desk.'
+          : isNotFound
+          ? 'No active camera hardware was detected on your device.'
+          : err.message || 'Unable to open camera feed.'
+      );
+    }
+  }, [cameraFacing]);
+
+  const stopCameraStream = useCallback(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  // Update Three.js scene background and shadow table for AR mode
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (isAR) {
+      if (scene) {
+        scene.background = null;
+      }
+      if (tableMeshRef.current) {
+        tableMeshRef.current.material = new THREE.ShadowMaterial({ opacity: 0.45 });
+      }
+      if (bevelMeshRef.current) bevelMeshRef.current.visible = false;
+      if (gridMeshRef.current) gridMeshRef.current.visible = false;
+      startCameraStream();
+    } else {
+      if (scene) {
+        scene.background = new THREE.Color(0x020617);
+      }
+      if (tableMeshRef.current) {
+        tableMeshRef.current.material = new THREE.MeshStandardMaterial({
+          color: 0x0f172a,
+          roughness: 0.8,
+          metalness: 0.2,
+        });
+      }
+      if (bevelMeshRef.current) bevelMeshRef.current.visible = true;
+      if (gridMeshRef.current) gridMeshRef.current.visible = true;
+      stopCameraStream();
+    }
+
+    return () => {
+      stopCameraStream();
+    };
+  }, [isAR, startCameraStream, stopCameraStream]);
+
+  // Transform AR scale and rotation
+  useEffect(() => {
+    if (rootGroupRef.current) {
+      if (isAR) {
+        rootGroupRef.current.scale.set(arScale, arScale, arScale);
+        rootGroupRef.current.rotation.y = (arRotation * Math.PI) / 180;
+      } else {
+        rootGroupRef.current.scale.set(1, 1, 1);
+        rootGroupRef.current.rotation.y = 0;
+      }
+    }
+  }, [isAR, arScale, arRotation]);
+
+  // Capture combined AR Snapshot (Camera feed + WebGL 3D circuit)
+  const handleTakeSnapshot = useCallback(() => {
+    const video = videoRef.current;
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+
+    const width = renderer.domElement.width;
+    const height = renderer.domElement.height;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // 1. Draw video background if active
+    if (video && video.readyState >= 2) {
+      ctx.drawImage(video, 0, 0, width, height);
+    } else {
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    // 2. Draw 3D WebGL Canvas
+    ctx.drawImage(renderer.domElement, 0, 0, width, height);
+
+    // 3. Trigger PNG Download
+    const link = document.createElement('a');
+    link.download = `AR_Electronics_Lab_${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
   }, []);
 
   // Update PSU and Multimeter LCD screen textures dynamically
@@ -1196,12 +1343,23 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
 
   return (
     <div className="w-full h-full relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 select-none shadow-2xl flex flex-col">
+      {/* Real-time Video Stream Element for AR Passthrough (Placed behind WebGL canvas) */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 z-0 ${
+          isAR ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      />
+
       {/* 3D Canvas Mount Element */}
       <div
         ref={mountRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        className="w-full h-full cursor-crosshair touch-none"
+        className="w-full h-full cursor-crosshair touch-none relative z-10"
       />
 
       {/* Floating Guidance Card for Moving/Placing IC */}
@@ -1359,18 +1517,24 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
       {/* AR Overlay if AR is active */}
       {isAR && (
         <AROverlay
-          videoRef={videoRef}
-          onClose={() => handleSetAR(false)}
-          cameraFacing={cameraFacing}
-          onToggleCameraFacing={() =>
+          mode={mode}
+          setMode={setMode}
+          inputBits={inputBits}
+          outputBits={outputBits}
+          toggleBit={toggleBit}
+          onExitAR={() => handleSetAR(false)}
+          onSwitchCamera={() =>
             setCameraFacing((prev) => (prev === 'environment' ? 'user' : 'environment'))
           }
-          hasMultipleCameras={hasMultipleCameras}
-          cameraError={cameraError}
+          onTakeSnapshot={handleTakeSnapshot}
           arScale={arScale}
-          onChangeScale={setArScale}
+          setArScale={setArScale}
           arRotation={arRotation}
-          onChangeRotation={setArRotation}
+          setArRotation={setArRotation}
+          hasMultipleCameras={hasMultipleCameras}
+          cameraFacing={cameraFacing}
+          cameraError={cameraError}
+          onRetryCamera={startCameraStream}
         />
       )}
     </div>
