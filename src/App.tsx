@@ -10,6 +10,7 @@ import { TheoryManual } from './components/TheoryManual';
 import { PinInspector } from './components/PinInspector';
 import { ComponentActionCard } from './components/ComponentActionCard';
 import { WiringBanner } from './components/WiringBanner';
+import { ICPlacementBanner } from './components/ICPlacementBanner';
 import { QuizModal } from './components/QuizModal';
 import { ComponentLibraryModal } from './components/ComponentLibraryModal';
 import { IC_COMPONENTS } from './data/componentsList';
@@ -87,6 +88,8 @@ export default function App() {
   // Faded Ghost IC Placement State (Sliding parallel to other ICs)
   const [isPlacingIC, setIsPlacingIC] = useState<boolean>(false);
   const [placingICCode, setPlacingICCode] = useState<string>('7408');
+  const [placingHoverColumn, setPlacingHoverColumn] = useState<number>(10);
+  const [activeMovingICId, setActiveMovingICId] = useState<string | null>(null);
 
   // Dynamic Mounted Components State (Multi-IC, Switches, LEDs, Resistors matching user reference image)
   const [placedICs, setPlacedICs] = useState<PlacedIC[]>([
@@ -180,11 +183,23 @@ export default function App() {
   // Start Faded Ghost IC placement
   const handleStartPlacingIC = useCallback((code: string) => {
     setPlacingICCode(code);
+    setActiveMovingICId(null);
     setIsPlacingIC(true);
   }, []);
 
+  const handleStartMoveIC = useCallback((id: string) => {
+    const found = placedICs.find((ic) => ic.id === id);
+    if (found) {
+      setPlacingICCode(found.icCode);
+      setPlacingHoverColumn(found.columnStart || 10);
+      setActiveMovingICId(id);
+      setIsPlacingIC(true);
+    }
+  }, [placedICs]);
+
   const handleCancelPlacingIC = useCallback(() => {
     setIsPlacingIC(false);
+    setActiveMovingICId(null);
   }, []);
 
   // Add Component Handlers
@@ -200,6 +215,7 @@ export default function App() {
     setPlacedICs((prev) => [...prev, newIC]);
     setSelectedIC(matched);
     setIsPlacingIC(false);
+    setActiveMovingICId(null);
   }, []);
 
   // Move / Reposition Existing IC
@@ -215,6 +231,8 @@ export default function App() {
           : ic
       )
     );
+    setIsPlacingIC(false);
+    setActiveMovingICId(null);
   }, []);
 
   const handleRemoveIC = useCallback((icId: string) => {
@@ -601,6 +619,7 @@ ${wires.map((w, idx) => `${idx + 1}. ${w.fromName} -> ${w.toName} [${w.color}] (
           onAddIC={handleAddIC}
           onRemoveIC={handleRemoveIC}
           onMoveIC={handleMoveIC}
+          onStartMoveIC={handleStartMoveIC}
           onStartPlacingIC={handleStartPlacingIC}
           placedSwitches={placedSwitches}
           onAddSwitch={handleAddSwitch}
@@ -668,6 +687,26 @@ ${wires.map((w, idx) => `${idx + 1}. ${w.fromName} -> ${w.toName} [${w.color}] (
               isPlacingIC={isPlacingIC}
               placingICCode={placingICCode}
               onCancelPlacingIC={handleCancelPlacingIC}
+              hoverColumn={placingHoverColumn}
+              onHoverColumnChange={setPlacingHoverColumn}
+              activeMovingICId={activeMovingICId}
+            />
+
+            {/* Floating IC Placement & Parallel Repositioning Banner */}
+            <ICPlacementBanner
+              isPlacingIC={isPlacingIC}
+              icCode={placingICCode}
+              column={placingHoverColumn}
+              onSetColumn={setPlacingHoverColumn}
+              onConfirmPlace={() => {
+                if (activeMovingICId) {
+                  handleMoveIC(activeMovingICId, placingHoverColumn);
+                } else {
+                  handleAddIC(placingICCode, placingHoverColumn);
+                }
+              }}
+              onCancel={handleCancelPlacingIC}
+              isMovingExisting={activeMovingICId !== null}
             />
 
             {/* Floating Wiring Feedback Banner (When hole is selected) */}
@@ -687,13 +726,7 @@ ${wires.map((w, idx) => `${idx + 1}. ${w.fromName} -> ${w.toName} [${w.color}] (
               onDeleteResistor={handleRemoveResistor}
               onDeleteWire={handleDeleteWire}
               onToggleSwitch={handleTogglePlacedSwitch}
-              onStartMoveIC={(id) => {
-                const found = placedICs.find((ic) => ic.id === id);
-                if (found) {
-                  handleStartPlacingIC(found.icCode);
-                  handleRemoveIC(id);
-                }
-              }}
+              onStartMoveIC={(id) => handleStartMoveIC(id)}
               onChangeLEDColor={(id, color) => {
                 setPlacedLEDs((prev) => prev.map((l) => (l.id === id ? { ...l, color } : l)));
                 setSelectedComponent((prev) =>

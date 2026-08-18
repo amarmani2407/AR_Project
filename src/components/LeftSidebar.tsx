@@ -55,6 +55,7 @@ interface LeftSidebarProps {
   onAddIC: (icCode: string, column: number) => void;
   onRemoveIC: (icId: string) => void;
   onMoveIC?: (icId: string, newColumn: number) => void;
+  onStartMoveIC?: (icId: string) => void;
   onStartPlacingIC?: (icCode: string) => void;
   placedSwitches: PlacedSwitch[];
   onAddSwitch: (label?: string, column?: number) => void;
@@ -108,6 +109,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onAddIC,
   onRemoveIC,
   onMoveIC,
+  onStartMoveIC,
   onStartPlacingIC,
   placedSwitches,
   onAddSwitch,
@@ -205,6 +207,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             onAddIC={onAddIC}
             onRemoveIC={onRemoveIC}
             onMoveIC={onMoveIC}
+            onStartMoveIC={onStartMoveIC}
             onStartPlacingIC={onStartPlacingIC}
             placedSwitches={placedSwitches}
             onAddSwitch={onAddSwitch}

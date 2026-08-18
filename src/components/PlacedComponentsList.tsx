@@ -32,6 +32,7 @@ interface PlacedComponentsListProps {
   onAddIC: (icCode: string, column: number) => void;
   onRemoveIC: (icId: string) => void;
   onMoveIC?: (icId: string, newColumn: number) => void;
+  onStartMoveIC?: (icId: string) => void;
   onStartPlacingIC?: (icCode: string) => void;
   placedSwitches: PlacedSwitch[];
   onAddSwitch: (label?: string, column?: number) => void;
@@ -61,6 +62,7 @@ export const PlacedComponentsList: React.FC<PlacedComponentsListProps> = ({
   onAddIC,
   onRemoveIC,
   onMoveIC,
+  onStartMoveIC,
   onStartPlacingIC,
   placedSwitches,
   onAddSwitch,
@@ -279,6 +281,20 @@ export const PlacedComponentsList: React.FC<PlacedComponentsListProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        if (onStartMoveIC) {
+                          onStartMoveIC(ic.id);
+                        } else if (onStartPlacingIC) {
+                          onStartPlacingIC(ic.icCode);
+                        }
+                      }}
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-sky-500/20 text-slate-400 hover:text-sky-400 border border-slate-800 hover:border-sky-500/40 transition-colors"
+                      title="Slide / Reposition IC parallel on breadboard"
+                    >
+                      <Move className="w-3.5 h-3.5" />
+                    </button>
+
                     <button
                       onClick={() => onRemoveIC(ic.id)}
                       className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/40 transition-colors"

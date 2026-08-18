@@ -88,6 +88,9 @@ interface Breadboard3DProps {
   isPlacingIC?: boolean;
   placingICCode?: string;
   onCancelPlacingIC?: () => void;
+  hoverColumn?: number;
+  onHoverColumnChange?: (col: number) => void;
+  activeMovingICId?: string | null;
 }
 
 export const Breadboard3D: React.FC<Breadboard3DProps> = ({
@@ -127,6 +130,9 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
   isPlacingIC = false,
   placingICCode = '7408',
   onCancelPlacingIC,
+  hoverColumn: propHoverColumn,
+  onHoverColumnChange,
+  activeMovingICId: propActiveMovingICId,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -144,8 +150,21 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
   const activeNodeMarkerRef = useRef<THREE.Mesh | null>(null);
 
   // Moving / Placing state
-  const [activeMovingICId, setActiveMovingICId] = useState<string | null>(null);
-  const [hoverColumn, setHoverColumn] = useState<number>(12);
+  const [internalMovingICId, setInternalMovingICId] = useState<string | null>(null);
+  const activeMovingICId = propActiveMovingICId !== undefined ? propActiveMovingICId : internalMovingICId;
+  const setActiveMovingICId = setInternalMovingICId;
+  const [internalHoverColumn, setInternalHoverColumn] = useState<number>(10);
+  const hoverColumn = propHoverColumn !== undefined ? propHoverColumn : internalHoverColumn;
+
+  const setHoverColumn = useCallback(
+    (col: number) => {
+      setInternalHoverColumn(col);
+      if (onHoverColumnChange) {
+        onHoverColumnChange(col);
+      }
+    },
+    [onHoverColumnChange]
+  );
 
   // Local AR state
   const [isAR, setIsAR] = useState(false);
@@ -561,12 +580,46 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
       const ghostBody = new THREE.Mesh(icBodyGeo, ghostTopMat);
       ghostGroup.add(ghostBody);
 
+      // Pin 1 indicator dot on top-left of IC
+      const dotGeo = new THREE.CircleGeometry(0.08, 16);
+      const dotMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.rotation.x = -Math.PI / 2;
+      dot.position.set(-1.45, 0.18, 0.42);
+      ghostGroup.add(dot);
+
+      // Semi-circular notch on the left
+      const notchGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.36, 16, 1, false, 0, Math.PI);
+      const notchMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        roughness: 0.8,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const notch = new THREE.Mesh(notchGeo, notchMat);
+      notch.rotation.y = -Math.PI / 2;
+      notch.position.set(-1.7, 0, 0);
+      ghostGroup.add(notch);
+
       // Faded pins
       const pinLegGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.3, 12);
       const pinLegMat = new THREE.MeshStandardMaterial({
         color: 0x38bdf8,
         transparent: true,
         opacity: 0.7,
+      });
+
+      // Alignment Guide Rings on Breadboard Socket Holes
+      const ringGeo = new THREE.RingGeometry(0.09, 0.18, 16);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.85,
       });
 
       for (let p = 0; p < 7; p++) {
@@ -578,6 +631,17 @@ export const Breadboard3D: React.FC<Breadboard3DProps> = ({
         const legTop = new THREE.Mesh(pinLegGeo, pinLegMat);
         legTop.position.set(px, -0.18, -0.6);
         ghostGroup.add(legTop);
+
+        // Alignment rings under pins (Row F and Row E)
+        const ringBot = new THREE.Mesh(ringGeo, ringMat);
+        ringBot.rotation.x = -Math.PI / 2;
+        ringBot.position.set(px, -0.32, 0.6);
+        ghostGroup.add(ringBot);
+
+        const ringTop = new THREE.Mesh(ringGeo, ringMat);
+        ringTop.rotation.x = -Math.PI / 2;
+        ringTop.position.set(px, -0.32, -0.6);
+        ghostGroup.add(ringTop);
       }
     }
   }, [isPlacingIC, activeMovingICId, placingICCode, placedICs]);
